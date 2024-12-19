@@ -1,165 +1,95 @@
-use std::time::{SystemTime, UNIX_EPOCH};
-use sha2::{Sha256, Digest};
+use blockchain_rust::{
+    wallet::Wallet,
+    transaction::Transaction,
+    blockchain::Blockchain,
+    error::BlockchainError,
+};
 
-// Block structure representing a single block in the blockchain
-#[derive(Debug, Clone)]
-struct Block {
-    // Index of the block in the chain
-    index: u64,
-    // Timestamp of when the block was created
-    timestamp: u64,
-    // Data stored in the block (in a real blockchain, this could be transactions)
-    data: String,
-    // Hash of the previous block (creates the chain)
-    previous_hash: String,
-    // Hash of the current block
-    hash: String,
-    // Nonce used for mining (proof of work)
-    nonce: u64,
-}
-
-impl Block {
-    // Create a new block
-    fn new(index: u64, data: String, previous_hash: String, difficulty: u32) -> Block {
-        let mut block = Block {
-            index,
-            timestamp: SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
-            data,
-            previous_hash,
-            hash: String::new(),
-            nonce: 0,
-        };
-        
-        // Mine the block with specified difficulty
-        block.mine(difficulty);
-        block
-    }
-
-    // Calculate hash of the block using SHA256
-    fn calculate_hash(&self) -> String {
-        let content = format!(
-            "{}{}{}{}{}",
-            self.index,
-            self.timestamp,
-            self.data,
-            self.previous_hash,
-            self.nonce
-        );
-        
-        let mut hasher = Sha256::new();
-        hasher.update(content.as_bytes());
-        format!("{:x}", hasher.finalize())
-    }
-
-    // Mine the block (proof of work)
-    fn mine(&mut self, difficulty: u32) {
-        let target = "0".repeat(difficulty as usize);
-
-        // Keep incrementing nonce until we find a hash with required difficulty
-        while !self.calculate_hash().starts_with(&target) {
-            self.nonce += 1;
-        }
-        
-        self.hash = self.calculate_hash();
-        println!("Block mined! Nonce: {}", self.nonce); // Added mining feedback
-    }
-}
-
-// Blockchain structure to manage the chain of blocks
-#[derive(Debug)]
-struct Blockchain {
-    chain: Vec<Block>,
-    difficulty: u32,
-}
-
-impl Blockchain {
-    // Create a new blockchain with genesis block
-    fn new() -> Blockchain {
-        let mut chain = Vec::new();
-        let difficulty = 4; // Default difficulty
-
-        // Create genesis block with difficulty
-        chain.push(Block::new(
-            0,
-            String::from("Genesis Block"),
-            String::from("0"),
-            difficulty,
-        ));
-
-        Blockchain {
-            chain,
-            difficulty,
-        }
-    }
-
-    // Add a new block to the chain
-    fn add_block(&mut self, data: String) {
-        let previous_block = self.chain.last().unwrap();
-        let new_block = Block::new(
-            previous_block.index + 1,
-            data,
-            previous_block.hash.clone(),
-            self.difficulty,
-        );
-        self.chain.push(new_block);
-    }
-
-    // Verify the integrity of the blockchain
-    fn is_valid(&self) -> bool {
-        for i in 1..self.chain.len() {
-            let current_block = &self.chain[i];
-            let previous_block = &self.chain[i - 1];
-
-            // Verify current block's hash
-            if current_block.hash != current_block.calculate_hash() {
-                println!("Invalid hash for block {}", current_block.index);
-                return false;
-            }
-
-            // Verify chain continuity
-            if current_block.previous_hash != previous_block.hash {
-                println!("Chain broken at block {}", current_block.index);
-                return false;
-            }
-        }
-        true
-    }
-
-    // Add method to adjust difficulty
-    fn adjust_difficulty(&mut self, new_difficulty: u32) {
-        self.difficulty = new_difficulty;
-        println!("Difficulty adjusted to: {}", self.difficulty);
-    }
-}
-
-fn main() {
-    // Create a new blockchain
-    let mut blockchain = Blockchain::new();
-    println!("Created blockchain with genesis block");
-
-    // Add some blocks with default difficulty
-    println!("Mining block 1...");
-    blockchain.add_block(String::from("First Block Data"));
+fn main() -> Result<(), BlockchainError> {
+    println!("Creating new blockchain...");
+    let mut blockchain = Blockchain::new(4)?; // Initialize with difficulty 4
     
-    // Adjust difficulty and mine another block
-    blockchain.adjust_difficulty(5); // Increase difficulty
-    println!("Mining block 2 with increased difficulty...");
-    blockchain.add_block(String::from("Second Block Data"));
+    // Create wallets for testing
+    println!("\nCreating wallets...");
+    let miner_wallet = Wallet::new()?;
+    let alice_wallet = Wallet::new()?;
+    let bob_wallet = Wallet::new()?;
+    
+    println!("Tai's address: {}", miner_wallet.public_key);
+    println!("Dory's address: {}", alice_wallet.public_key);
+    println!("Ken's address: {}", bob_wallet.public_key);
+
+    // Create and add mining reward transaction
+    println!("\nCreating mining reward transaction...");
+    let mining_reward = Transaction::new(
+        &Wallet::new()?, // System wallet for rewards
+        miner_wallet.public_key.clone(),
+        50.0, // Mining reward amount
+    )?;
+
+    // Create a transaction from Alice to Bob
+    println!("\nCreating transaction: Alice -> Bob");
+    let transaction1 = Transaction::new(
+        &alice_wallet,
+        bob_wallet.public_key.clone(),
+        10.0,
+    )?;
+
+    // Add transactions to pending list and mine a new block
+    println!("\nMining new block with transactions...");
+    blockchain.add_transaction(mining_reward)?;
+    blockchain.add_transaction(transaction1)?;
+    blockchain.mine_pending_transactions(miner_wallet.public_key.clone())?;
+
+    // Create another transaction from Bob to Alice
+    println!("\nCreating transaction: Bob -> Alice");
+    let transaction2 = Transaction::new(
+        &bob_wallet,
+        alice_wallet.public_key.clone(),
+        5.0,
+    )?;
+
+    // Mine another block
+    println!("\nMining another block...");
+    blockchain.add_transaction(transaction2)?;
+    blockchain.mine_pending_transactions(miner_wallet.public_key.clone())?;
 
     // Verify the blockchain
-    println!("Is blockchain valid? {}", blockchain.is_valid());
+    println!("\nVerifying blockchain...");
+    match blockchain.is_chain_valid() {
+        Ok(true) => println!("Blockchain is valid!"),
+        Ok(false) => println!("Blockchain is invalid!"),
+        Err(e) => println!("Error verifying blockchain: {}", e),
+    }
 
-    // Print the blockchain
-    for block in blockchain.chain.iter() {
-        println!("Block #{}", block.index);
+    // Print blockchain state
+    println!("\nFinal Blockchain State:");
+    println!("Number of blocks: {}", blockchain.chain.len());
+    
+    for (i, block) in blockchain.chain.iter().enumerate() {
+        println!("\nBlock #{}", i);
         println!("Timestamp: {}", block.timestamp);
-        println!("Data: {}", block.data);
         println!("Previous Hash: {}", block.previous_hash);
         println!("Hash: {}", block.hash);
         println!("Nonce: {}", block.nonce);
-        println!("------------------------");
+        println!("Merkle Root: {}", block.merkle_root);
+        
+        println!("Transactions:");
+        for tx in &block.transactions {
+            println!("  From: {}...", &tx.from[..10]);
+            println!("  To: {}...", &tx.to[..10]);
+            println!("  Amount: {}", tx.amount);
+            println!("  ID: {}", tx.id);
+            println!("  Signature: {}", tx.signature.as_ref().unwrap_or(&"None".to_string()));
+            println!();
+        }
     }
+
+    // Get account balances
+    println!("\nFinal Balances:");
+    println!("Tai's balance: {}", blockchain.get_balance(&miner_wallet.public_key)?);
+    println!("Dory's balance: {}", blockchain.get_balance(&alice_wallet.public_key)?);
+    println!("Ken's balance: {}", blockchain.get_balance(&bob_wallet.public_key)?);
+
+    Ok(())
 }
