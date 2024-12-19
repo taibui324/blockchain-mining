@@ -90,7 +90,7 @@ impl Block {
         
         while !self.calculate_hash().starts_with(&target) {
             self.nonce += 1;
-            if self.nonce >= u64::MAX {
+            if self.nonce == u64::MAX {
                 return Err(BlockchainError::MiningError("Nonce overflow".to_string()));
             }
         }

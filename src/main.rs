@@ -17,7 +17,7 @@ fn main() -> Result<(), BlockchainError> {
     
     println!("Tai's address: {}", miner_wallet.public_key);
     println!("Dory's address: {}", alice_wallet.public_key);
-    println!("Ken's address: {}", bob_wallet.public_key);
+    println!("Mochi's address: {}", bob_wallet.public_key);
 
     // Create and add mining reward transaction
     println!("\nCreating mining reward transaction...");
@@ -89,7 +89,7 @@ fn main() -> Result<(), BlockchainError> {
     println!("\nFinal Balances:");
     println!("Tai's balance: {}", blockchain.get_balance(&miner_wallet.public_key)?);
     println!("Dory's balance: {}", blockchain.get_balance(&alice_wallet.public_key)?);
-    println!("Ken's balance: {}", blockchain.get_balance(&bob_wallet.public_key)?);
+    println!("Mochi's balance: {}", blockchain.get_balance(&bob_wallet.public_key)?);
 
     Ok(())
 }
